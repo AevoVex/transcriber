@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-DEFAULT_VISION_MODEL = "qwen3-vl-vision:latest"
+DEFAULT_VISION_MODEL = "qwen3-vl:8b"
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_PROMPT = (
     "Answer in Russian. Return only the final description, without analysis or reasoning. "

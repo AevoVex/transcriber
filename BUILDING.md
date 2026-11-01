@@ -2,12 +2,12 @@
 
 ## Требования
 
-- Windows 10/11 x64;
+- Windows 10/11, Linux или macOS;
 - Python 3.10–3.12;
 - виртуальное окружение `.venv`;
-- Inno Setup 6 — только для сборки установщика.
+- Inno Setup 6 — только для Windows-установщика.
 
-## Автоматическая сборка
+## Автоматическая сборка Windows
 
 ```powershell
 build.bat
@@ -34,6 +34,27 @@ dist/Transcriber/
 .\.venv\Scripts\pyinstaller.exe --noconfirm --clean transcriber.spec
 ```
 
+На Linux/macOS используйте исполняемые файлы виртуального окружения без расширения `.exe`:
+
+```bash
+python -m pip install -r requirements.txt -r requirements-dev.txt
+pyinstaller --noconfirm --clean transcriber.spec
+```
+
+## Автотесты
+
+Функциональные тесты не загружают реальные модели Whisper/Ollama и используют временные файлы:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+На Linux/macOS:
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
 Проверка EXE:
 
 ```powershell
@@ -57,4 +78,4 @@ dist/Transcriber/
 
 ## Ограничения
 
-Сборка платформозависима: Windows EXE необходимо собирать на Windows. Модели Whisper не упаковываются и загружаются при первом использовании.
+Сборка платформозависима: пакет для каждой ОС необходимо собирать на этой ОС. Inno Setup и интеграция с контекстным меню относятся только к Windows. Модели Whisper не упаковываются и загружаются при первом использовании.

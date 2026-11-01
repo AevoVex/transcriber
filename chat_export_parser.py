@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -791,7 +792,11 @@ def transcribe_missing(
     main_script = Path(__file__).with_name("main.py")
     if getattr(sys, "frozen", False):
         command = [
-            str(Path(sys.executable).resolve().with_name("TranscriberCLI.exe")),
+            str(
+                Path(sys.executable).resolve().with_name(
+                    "TranscriberCLI.exe" if os.name == "nt" else "TranscriberCLI"
+                )
+            ),
             *(str(path) for path in existing_dirs),
         ]
     else:

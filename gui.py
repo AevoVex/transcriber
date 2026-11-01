@@ -1,41 +1,206 @@
 from __future__ import annotations
 
 import html
+import os
 import re
 import sys
 from pathlib import Path
 
-from PyQt5.QtCore import QProcess, QProcessEnvironment, QSettings, QTimer, Qt, QUrl, pyqtSignal
-from PyQt5.QtGui import QDesktopServices, QFont
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import QProcess, QProcessEnvironment, QSettings, QThread, QTimer, Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices, QFont
+from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
+    QFrame,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QProgressBar,
     QSpinBox,
-    QTabWidget,
+    QScrollArea,
+    QSizePolicy,
+    QSplitter,
+    QStackedWidget,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
 
+from ollama_manager import (
+    OllamaClient,
+    OllamaManagerError,
+    install_ollama,
+    ollama_executable,
+    start_ollama_service,
+    wait_for_ollama,
+)
+
 
 APP_DIR = Path(__file__).resolve().parent
 RUNTIME_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else APP_DIR
+EXECUTABLE_SUFFIX = ".exe" if os.name == "nt" else ""
 MEDIA_FILTER = (
     "Медиафайлы (*.mp3 *.wav *.ogg *.opus *.m4a *.aac *.flac "
     "*.mp4 *.mkv *.webm);;Все файлы (*)"
 )
 HTML_FILTER = "HTML-файлы (*.html *.htm);;Все файлы (*)"
+
+NORD_STYLESHEET = """
+QMainWindow, QWidget {
+    background-color: #2E3440;
+    color: #D8DEE9;
+    font-family: "Segoe UI Variable", "Inter", "Segoe UI", sans-serif;
+    font-size: 13px;
+}
+QFrame#sidebar { background-color: #292E39; border-right: 1px solid #434C5E; }
+QLabel#brand { color: #ECEFF4; font-size: 18px; font-weight: 600; letter-spacing: 1px; }
+QFrame#sidebar QLabel { background: transparent; }
+QLabel#muted, QLabel#note { color: #8F98A8; }
+QLabel#sidebarSection { color: #7F8999; font-size: 11px; font-weight: 600; letter-spacing: 1px; }
+QLabel#sectionTitle { color: #E5E9F0; font-size: 15px; font-weight: 600; }
+QLabel#pageTitle { color: #ECEFF4; font-size: 22px; font-weight: 600; }
+QLabel#pageDescription { color: #9AA5B5; font-size: 12px; }
+QListWidget#navigation {
+    background: transparent; border: none; outline: none; padding: 2px 0;
+}
+QListWidget#navigation::item {
+    height: 38px; border-radius: 5px; padding: 0 8px; color: #B8C0CC;
+}
+QListWidget#navigation::item:hover { background: #343B49; color: #E5E9F0; }
+QListWidget#navigation::item:selected {
+    background: #3B4252; color: #ECEFF4; border-left: 3px solid #88C0D0;
+}
+QScrollArea { border: none; background: #2E3440; }
+QScrollArea > QWidget > QWidget { background: #2E3440; }
+QGroupBox {
+    background: #3B4252; border: 1px solid #4C566A; border-radius: 7px;
+    margin-top: 14px; padding: 14px 12px 10px 12px; font-weight: 600; color: #E5E9F0;
+}
+QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
+QLineEdit, QComboBox, QSpinBox, QListWidget, QTextBrowser {
+    min-height: 24px; background: #343B49; color: #D8DEE9;
+    border: 1px solid #4C566A; border-radius: 5px; padding: 4px 7px;
+    selection-background-color: #5E81AC;
+}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QListWidget:focus, QTextBrowser:focus {
+    border-color: #88C0D0;
+}
+QComboBox::drop-down { border: none; width: 24px; }
+QComboBox QAbstractItemView { background: #3B4252; border: 1px solid #4C566A; selection-background-color: #434C5E; }
+QPushButton {
+    min-height: 24px; padding: 4px 12px; background: #434C5E; color: #E5E9F0;
+    border: 1px solid #4C566A; border-radius: 5px;
+}
+QPushButton:hover { background: #4C566A; border-color: #5E81AC; }
+QPushButton:pressed { background: #3B4252; }
+QPushButton:disabled { color: #7F8999; background: #343B49; border-color: #434C5E; }
+QPushButton#startButton { background: #88C0D0; color: #2E3440; border-color: #88C0D0; font-weight: 600; }
+QPushButton#startButton:hover { background: #8FBCBB; }
+QPushButton#stopButton { background: #434C5E; color: #BF616A; border-color: #BF616A; font-weight: 600; }
+QPushButton#stopButton:hover { background: #BF616A; color: #ECEFF4; }
+QPushButton#ghostButton { background: transparent; border-color: transparent; color: #AAB3C0; }
+QPushButton#ghostButton:hover { background: #434C5E; color: #ECEFF4; }
+QCheckBox { spacing: 8px; color: #D8DEE9; }
+QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #4C566A; border-radius: 4px; background: #343B49; }
+QCheckBox::indicator:hover { border-color: #88C0D0; }
+QCheckBox::indicator:checked { background: #88C0D0; border-color: #88C0D0; }
+QFrame#outputPanel { background: #3B4252; border-top: 1px solid #4C566A; }
+QTextBrowser { font-family: "Cascadia Mono", "JetBrains Mono", monospace; font-size: 12px; }
+QSplitter::handle { background: #4C566A; height: 1px; }
+QScrollBar:vertical { width: 10px; background: #2E3440; }
+QScrollBar::handle:vertical { background: #4C566A; min-height: 28px; border-radius: 4px; }
+QToolTip { background: #434C5E; color: #ECEFF4; border: 1px solid #4C566A; }
+"""
+
+
+class OllamaTask(QThread):
+    progress = pyqtSignal(int)
+    message = pyqtSignal(str)
+    succeeded = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(self, action: str, model: str, base_url: str, parent=None):
+        super().__init__(parent)
+        self.action = action
+        self.model = model
+        self.base_url = base_url
+
+    def run(self) -> None:
+        try:
+            if self.action == "install":
+                self.message.emit("Загрузка и запуск официального установщика Ollama…")
+                result = install_ollama()
+                self.message.emit(result)
+                if sys.platform == "darwin":
+                    self.succeeded.emit(result)
+                    return
+                if not wait_for_ollama(self.base_url, timeout=90):
+                    raise OllamaManagerError(
+                        "Установка завершена, но Ollama API пока недоступен. "
+                        "Запустите Ollama и повторите проверку."
+                    )
+
+            client = OllamaClient(self.base_url)
+            if client.has_model(self.model):
+                self.succeeded.emit(f"Модель уже установлена: {self.model}")
+                return
+            self.message.emit(f"Загрузка модели {self.model}…")
+            for update in client.pull_model(self.model):
+                self.message.emit(update.status)
+                self.progress.emit(update.percent if update.percent is not None else -1)
+            if not client.has_model(self.model):
+                raise OllamaManagerError("Ollama не подтвердила установку модели.")
+            self.succeeded.emit(f"Модель готова: {self.model}")
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
+class OllamaProgressDialog(QDialog):
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setMinimumWidth(480)
+        self.status = QLabel("Подготовка…")
+        self.status.setWordWrap(True)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.close_button = QPushButton("Закрыть")
+        self.close_button.setEnabled(False)
+        self.close_button.clicked.connect(self.accept)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.status)
+        layout.addWidget(self.progress)
+        layout.addWidget(self.close_button, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def update_progress(self, value: int) -> None:
+        if value < 0:
+            self.progress.setRange(0, 0)
+        else:
+            self.progress.setRange(0, 100)
+            self.progress.setValue(value)
+
+    def complete(self, message: str) -> None:
+        self.status.setText(message)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(100)
+        self.close_button.setEnabled(True)
+
+    def fail(self, message: str) -> None:
+        self.status.setText(f"Ошибка: {message}")
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.close_button.setEnabled(True)
 
 
 class DropListWidget(QListWidget):
@@ -44,8 +209,8 @@ class DropListWidget(QListWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.setDragDropMode(QListWidget.DropOnly)
-        self.setDefaultDropAction(Qt.CopyAction)
+        self.setDragDropMode(QListWidget.DragDropMode.DropOnly)
+        self.setDefaultDropAction(Qt.DropAction.CopyAction)
 
     def dragEnterEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if event.mimeData().hasUrls():
@@ -74,7 +239,7 @@ class PathSelector(QWidget):
         self.paths = DropListWidget()
         self.paths.paths_dropped.connect(self.add_paths)
         self.paths.setAlternatingRowColors(True)
-        self.paths.setSelectionMode(QListWidget.ExtendedSelection)
+        self.paths.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.paths.setMinimumHeight(125)
 
         add_files = QPushButton("Добавить файлы…")
@@ -196,7 +361,7 @@ class TranscriptionTab(QWidget):
         output_row.addWidget(self.output_dir)
         output_row.addWidget(browse_output)
 
-        self.force = QCheckBox("Перезаписывать существующие результаты (--force)")
+        self.force = QCheckBox("Перезаписать готовые результаты (--force)")
 
         output_group = QGroupBox("Результат")
         output_form = QFormLayout(output_group)
@@ -251,25 +416,24 @@ class ChatExportTab(QWidget):
         super().__init__(parent)
         self.path_selector = PathSelector(HTML_FILTER)
         self.options = ModelOptions()
-        self.no_transcribe = QCheckBox(
-            "Только встроить готовые JSON/MD, не запускать Whisper"
-        )
+        self.no_transcribe = QCheckBox("Не запускать Whisper — использовать готовые JSON/MD")
         self.force = QCheckBox(
-            "Перезаписать существующие транскрипции и описания (--force)"
+            "Перезаписать готовые результаты (--force)"
         )
 
-        self.describe_images = QCheckBox(
-            "Создавать текстовые описания фото и стикеров через Ollama"
-        )
+        self.describe_images = QCheckBox("Описывать фото и стикеры через Ollama")
         self.vision_model = QComboBox()
         self.vision_model.setEditable(True)
         self.vision_model.addItems(
-            ["qwen3-vl-vision:latest", "qwen3-vl:8b", "qwen3-vl:4b", "qwen3-vl:2b"]
+            ["qwen3-vl:8b", "qwen3-vl-vision:latest", "qwen3-vl:4b", "qwen3-vl:2b"]
         )
         self.ollama_url = QLineEdit("http://127.0.0.1:11434")
         self.vision_log = QCheckBox("Подробный лог ошибок Ollama (--log)")
+        self.ollama_setup_button = QPushButton("Проверить / скачать модель")
+        self.ollama_status = QLabel("Статус Ollama ещё не проверен")
+        self.ollama_status.setObjectName("muted")
 
-        self.export_md = QCheckBox("Создать текстовую Markdown-выгрузку для Obsidian")
+        self.export_md = QCheckBox("Создать Markdown-архив для Obsidian")
         self.md_chunk_size = QSpinBox()
         self.md_chunk_size.setRange(50, 5000)
         self.md_chunk_size.setValue(500)
@@ -287,6 +451,8 @@ class ChatExportTab(QWidget):
         vision_form.addRow("", self.describe_images)
         vision_form.addRow("Vision-модель:", self.vision_model)
         vision_form.addRow("Ollama API:", self.ollama_url)
+        vision_form.addRow("", self.ollama_setup_button)
+        vision_form.addRow("Статус:", self.ollama_status)
         vision_form.addRow("", self.vision_log)
 
         self.no_transcribe.toggled.connect(self.update_force_enabled)
@@ -381,11 +547,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Transcriber")
-        self.resize(880, 900)
+        self.resize(1180, 820)
+        self.setMinimumSize(900, 640)
 
         self.settings = QSettings("LocalTools", "Transcriber")
         self.process = QProcess(self)
-        self.process.setProcessChannelMode(QProcess.MergedChannels)
+        self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("PYTHONUNBUFFERED", "1")
         environment.insert("PYTHONIOENCODING", "utf-8")
@@ -397,11 +564,32 @@ class MainWindow(QMainWindow):
         self.process.finished.connect(self.process_finished)
         self.process.errorOccurred.connect(self.process_error)
 
-        self.tabs = QTabWidget()
         self.transcription_tab = TranscriptionTab()
         self.chat_export_tab = ChatExportTab()
-        self.tabs.addTab(self.transcription_tab, "Транскрипция")
-        self.tabs.addTab(self.chat_export_tab, "Chat Export")
+        self.pages = QStackedWidget()
+        self.pages.addWidget(
+            self.wrap_page(
+                self.transcription_tab,
+                "Транскрипция",
+                "Локальная расшифровка аудио и видео с экспортом Markdown и JSON.",
+            )
+        )
+        self.pages.addWidget(
+            self.wrap_page(
+                self.chat_export_tab,
+                "Telegram Chat Export",
+                "Транскрипции, vision-описания и связанный Markdown-архив чата.",
+            )
+        )
+
+        self.navigation = QListWidget()
+        self.navigation.setObjectName("navigation")
+        self.navigation.setFixedWidth(236)
+        self.navigation.setSpacing(4)
+        for title, symbol in (("Транскрипция", "◉"), ("Chat Export", "◇")):
+            item = QListWidgetItem(f"  {symbol}   {title}")
+            self.navigation.addItem(item)
+        self.navigation.currentRowChanged.connect(self.switch_page)
 
         self.log = QTextBrowser()
         self.log.setOpenLinks(False)
@@ -410,8 +598,8 @@ class MainWindow(QMainWindow):
         self.output_buffer = ""
         self.log.setReadOnly(True)
         self.log.setMinimumHeight(190)
-        log_font = QFont("Consolas")
-        log_font.setStyleHint(QFont.Monospace)
+        log_font = QFont("Cascadia Mono")
+        log_font.setStyleHint(QFont.StyleHint.Monospace)
         self.log.setFont(log_font)
 
         self.start_button = QPushButton("Запустить")
@@ -419,49 +607,117 @@ class MainWindow(QMainWindow):
         self.stop_button = QPushButton("Остановить")
         self.stop_button.setObjectName("stopButton")
         self.stop_button.setEnabled(False)
-        open_output_button = QPushButton("Открыть папку результата")
+        open_output_button = QPushButton("Открыть результат")
         clear_button = QPushButton("Очистить лог")
-        self.dark_theme = QCheckBox("Тёмная тема")
+        clear_button.setObjectName("ghostButton")
 
         self.start_button.clicked.connect(self.start_process)
         self.stop_button.clicked.connect(self.stop_process)
         open_output_button.clicked.connect(self.open_result_folder)
         clear_button.clicked.connect(self.log.clear)
-        self.dark_theme.toggled.connect(self.apply_theme)
 
         actions = QHBoxLayout()
         actions.addWidget(self.start_button)
         actions.addWidget(self.stop_button)
         actions.addWidget(open_output_button)
         actions.addStretch(1)
-        actions.addWidget(self.dark_theme)
         actions.addWidget(clear_button)
 
+        output_header = QHBoxLayout()
+        output_title = QLabel("Вывод процесса")
+        output_title.setObjectName("sectionTitle")
+        output_header.addWidget(output_title)
+        output_header.addStretch(1)
+
+        output_panel = QFrame()
+        output_panel.setObjectName("outputPanel")
+        output_layout = QVBoxLayout(output_panel)
+        output_layout.setContentsMargins(12, 10, 12, 12)
+        output_layout.addLayout(output_header)
+        output_layout.addWidget(self.log)
+        output_layout.addLayout(actions)
+
+        workspace = QSplitter(Qt.Orientation.Vertical)
+        workspace.addWidget(self.pages)
+        workspace.addWidget(output_panel)
+        workspace.setStretchFactor(0, 3)
+        workspace.setStretchFactor(1, 1)
+        workspace.setSizes([570, 230])
+
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(12, 18, 12, 12)
+        brand = QLabel("TRANSCRIBER")
+        brand.setObjectName("brand")
+        subtitle = QLabel("Local media tools")
+        subtitle.setObjectName("muted")
+        tools_label = QLabel("ИНСТРУМЕНТЫ")
+        tools_label.setObjectName("sidebarSection")
+        sidebar_layout.addWidget(brand)
+        sidebar_layout.addWidget(subtitle)
+        sidebar_layout.addSpacing(22)
+        sidebar_layout.addWidget(tools_label)
+        sidebar_layout.addWidget(self.navigation)
+        sidebar_layout.addStretch(1)
+        version = QLabel("Developer build · Qt 6")
+        version.setObjectName("muted")
+        sidebar_layout.addWidget(version)
+
         central = QWidget()
-        layout = QVBoxLayout(central)
-        layout.addWidget(self.tabs, 3)
-        layout.addWidget(QLabel("Вывод:"))
-        layout.addWidget(self.log, 1)
-        layout.addLayout(actions)
+        layout = QHBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(sidebar)
+        layout.addWidget(workspace, 1)
         self.setCentralWidget(central)
 
-        self.dark_theme.setChecked(self.settings.value("window/dark_theme", False, type=bool))
-        self.apply_theme(self.dark_theme.isChecked())
+        self.apply_theme()
 
         self.transcription_tab.load_settings(self.settings)
         self.chat_export_tab.load_settings(self.settings)
-        self.tabs.setCurrentIndex(self.settings.value("window/tab", 0, type=int))
+        self.navigation.setCurrentRow(self.settings.value("window/page", 0, type=int))
+        self.ollama_task: OllamaTask | None = None
+        self.ollama_dialog: OllamaProgressDialog | None = None
+        self.chat_export_tab.ollama_setup_button.clicked.connect(self.check_ollama_interactive)
+        QTimer.singleShot(700, self.check_ollama_on_startup)
+
+    @staticmethod
+    def wrap_page(content: QWidget, title: str, description: str) -> QWidget:
+        content.setMinimumWidth(0)
+        content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+        title_label = QLabel(title)
+        title_label.setObjectName("pageTitle")
+        description_label = QLabel(description)
+        description_label.setObjectName("pageDescription")
+        shell = QWidget()
+        layout = QVBoxLayout(shell)
+        layout.setContentsMargins(18, 16, 18, 10)
+        layout.setSpacing(6)
+        layout.addWidget(title_label)
+        layout.addWidget(description_label)
+        layout.addSpacing(6)
+        layout.addWidget(scroll, 1)
+        return shell
+
+    def switch_page(self, index: int) -> None:
+        if index >= 0:
+            self.pages.setCurrentIndex(index)
 
     def active_command(self) -> tuple[Path, list[str]]:
-        widget = self.tabs.currentWidget()
-        if isinstance(widget, TranscriptionTab):
-            return widget.command()
-        if isinstance(widget, ChatExportTab):
-            return widget.command()
-        raise ValueError("Неизвестная вкладка.")
+        return (
+            self.transcription_tab.command()
+            if self.pages.currentIndex() == 0
+            else self.chat_export_tab.command()
+        )
 
     def start_process(self) -> None:
-        if self.process.state() != QProcess.NotRunning:
+        if self.process.state() != QProcess.ProcessState.NotRunning:
             return
         try:
             script, arguments = self.active_command()
@@ -469,16 +725,23 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Не выбраны файлы", str(exc))
             return
 
-        if not script.is_file():
+        if (
+            self.pages.currentIndex() == 1
+            and self.chat_export_tab.describe_images.isChecked()
+            and not self.ensure_ollama_model()
+        ):
+            return
+
+        if not getattr(sys, "frozen", False) and not script.is_file():
             QMessageBox.critical(self, "Ошибка", f"Не найден файл: {script}")
             return
 
         self.output_buffer = ""
         if getattr(sys, "frozen", False):
             executable_name = (
-                "TranscriberCLI.exe"
+                f"TranscriberCLI{EXECUTABLE_SUFFIX}"
                 if script.name == "main.py"
-                else "ChatExportParser.exe"
+                else f"ChatExportParser{EXECUTABLE_SUFFIX}"
             )
             program = RUNTIME_DIR / executable_name
             process_arguments = arguments
@@ -490,15 +753,125 @@ class MainWindow(QMainWindow):
         self.append_log(f"\n> {command_preview}\n")
         self.process.start(str(program), process_arguments)
 
+    def ollama_values(self) -> tuple[str, str]:
+        return (
+            self.chat_export_tab.vision_model.currentText().strip(),
+            self.chat_export_tab.ollama_url.text().strip(),
+        )
+
+    def check_ollama_on_startup(self) -> None:
+        model, base_url = self.ollama_values()
+        client = OllamaClient(base_url, timeout=2)
+        if not client.is_available():
+            if ollama_executable() and start_ollama_service() and wait_for_ollama(base_url, 10):
+                self.offer_missing_model(client, model, base_url)
+                return
+            self.chat_export_tab.ollama_status.setText("Ollama не найдена или не запущена")
+            answer = QMessageBox.question(
+                self,
+                "Требуется Ollama",
+                "Для описания изображений нужна Ollama, но локальный сервис не найден.\n\n"
+                "Скачать и запустить официальный установщик?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self.start_ollama_task("install", model, base_url)
+            return
+        self.offer_missing_model(client, model, base_url)
+
+    def check_ollama_interactive(self) -> None:
+        model, base_url = self.ollama_values()
+        if not model:
+            QMessageBox.warning(self, "Модель не указана", "Введите имя модели Ollama.")
+            return
+        client = OllamaClient(base_url, timeout=3)
+        if not client.is_available():
+            if ollama_executable() and start_ollama_service() and wait_for_ollama(base_url, 10):
+                self.offer_missing_model(client, model, base_url, always_report=True)
+                return
+            self.chat_export_tab.ollama_status.setText("Ollama API недоступен")
+            answer = QMessageBox.question(
+                self,
+                "Ollama недоступна",
+                "Установить Ollama с официального сайта и затем скачать модель?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self.start_ollama_task("install", model, base_url)
+            return
+        self.offer_missing_model(client, model, base_url, always_report=True)
+
+    def offer_missing_model(
+        self,
+        client: OllamaClient,
+        model: str,
+        base_url: str,
+        always_report: bool = False,
+    ) -> bool:
+        try:
+            if client.has_model(model):
+                self.chat_export_tab.ollama_status.setText(f"Готово: {model}")
+                if always_report:
+                    QMessageBox.information(self, "Ollama", f"Модель установлена: {model}")
+                return True
+        except OllamaManagerError as exc:
+            self.chat_export_tab.ollama_status.setText(str(exc))
+            return False
+        self.chat_export_tab.ollama_status.setText(f"Модель отсутствует: {model}")
+        answer = QMessageBox.question(
+            self,
+            "Модель Ollama не найдена",
+            f"Модель «{model}» не установлена.\n\nСкачать её сейчас?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.start_ollama_task("pull", model, base_url)
+        return False
+
+    def ensure_ollama_model(self) -> bool:
+        model, base_url = self.ollama_values()
+        if not model:
+            QMessageBox.warning(self, "Модель не указана", "Введите имя vision-модели.")
+            return False
+        client = OllamaClient(base_url, timeout=3)
+        if not client.is_available():
+            self.check_ollama_interactive()
+            return False
+        return self.offer_missing_model(client, model, base_url)
+
+    def start_ollama_task(self, action: str, model: str, base_url: str) -> None:
+        if self.ollama_task and self.ollama_task.isRunning():
+            return
+        dialog = OllamaProgressDialog("Настройка Ollama", self)
+        task = OllamaTask(action, model, base_url, self)
+        self.ollama_dialog = dialog
+        self.ollama_task = task
+        task.message.connect(dialog.status.setText)
+        task.progress.connect(dialog.update_progress)
+        task.succeeded.connect(dialog.complete)
+        task.failed.connect(dialog.fail)
+        task.succeeded.connect(self.chat_export_tab.ollama_status.setText)
+        task.failed.connect(self.chat_export_tab.ollama_status.setText)
+        task.finished.connect(self.ollama_task_finished)
+        task.finished.connect(task.deleteLater)
+        dialog.open()
+        task.start()
+
+    def ollama_task_finished(self) -> None:
+        self.ollama_task = None
+
     def stop_process(self) -> None:
-        if self.process.state() == QProcess.NotRunning:
+        if self.process.state() == QProcess.ProcessState.NotRunning:
             return
         self.append_log("\n[GUI] Остановка процесса…\n")
         self.process.terminate()
         QTimer.singleShot(3000, self.kill_if_running)
 
     def kill_if_running(self) -> None:
-        if self.process.state() != QProcess.NotRunning:
+        if self.process.state() != QProcess.ProcessState.NotRunning:
             self.process.kill()
 
     def read_output(self) -> None:
@@ -516,11 +889,11 @@ class MainWindow(QMainWindow):
                 resolved = candidate.resolve()
                 url = QUrl.fromLocalFile(str(resolved)).toString()
                 name = resolved.name or str(resolved)
-                parent = "" if not resolved.name else str(resolved.parent) + "\\"
+                parent = "" if not resolved.name else str(resolved.parent) + os.sep
                 prefix = html.escape(f"[{match.group(1)}] {parent}")
                 label = html.escape(name)
                 cursor = self.log.textCursor()
-                cursor.movePosition(cursor.End)
+                cursor.movePosition(cursor.MoveOperation.End)
                 cursor.insertHtml(f'{prefix}<a href="{url}">{label}</a><br/>')
                 self.log.setTextCursor(cursor)
                 self.log.ensureCursorVisible()
@@ -529,7 +902,7 @@ class MainWindow(QMainWindow):
 
     def append_log(self, text: str) -> None:
         cursor = self.log.textCursor()
-        cursor.movePosition(cursor.End)
+        cursor.movePosition(cursor.MoveOperation.End)
         cursor.insertText(text)
         self.log.setTextCursor(cursor)
         self.log.ensureCursorVisible()
@@ -538,8 +911,8 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(url)
 
     def result_folder(self) -> Path | None:
-        current = self.tabs.currentWidget()
-        if isinstance(current, TranscriptionTab):
+        if self.pages.currentIndex() == 0:
+            current = self.transcription_tab
             configured = current.output_dir.text().strip()
             if configured:
                 return Path(configured)
@@ -547,7 +920,8 @@ class MainWindow(QMainWindow):
             if paths:
                 first = Path(paths[0])
                 return first if first.is_dir() else first.parent
-        elif isinstance(current, ChatExportTab):
+        else:
+            current = self.chat_export_tab
             paths = current.path_selector.values()
             if paths:
                 first = Path(paths[0])
@@ -564,52 +938,17 @@ class MainWindow(QMainWindow):
         folder.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve())))
 
-    def apply_theme(self, dark: bool) -> None:
-        if dark:
-            colors = {
-                "window": "#3c455c", "panel": "#3c455c", "field": "#433c5c",
-                "text": "#dde2e3", "muted": "#9aacb8", "border": "#3c555c",
-                "accent": "#b37c57", "disabled": "#60412b", "selection": "#60412b",
-                "button_text": "#dde2e3", "hover": "#3c555c", "tab": "#3c555c",
-                "positive": "#455c3c", "danger": "#5c3c45", "focus": "#b37c57",
-                "link": "#b37c57",
-            }
-        else:
-            colors = {
-                "window": "#ebe3ce", "panel": "#c4d4d7", "field": "#ebe3ce",
-                "text": "#145270", "muted": "#145270", "border": "#07b1cd",
-                "accent": "#07b1cd", "disabled": "#c4d4d7", "selection": "#03e3e3",
-                "button_text": "#ebe3ce", "hover": "#03e3e3", "tab": "#142470",
-                "positive": "#147060", "danger": "#701452", "focus": "#527014",
-                "link": "#701452",
-            }
-        self.setStyleSheet(f"""
-            QMainWindow, QWidget {{ background: {colors['window']}; color: {colors['text']}; }}
-            QTabWidget::pane {{ border: 1px solid {colors['border']}; background: {colors['panel']}; }}
-            QTabBar::tab {{ padding: 8px 18px; background: {colors['field']}; border: 1px solid {colors['border']}; }}
-            QTabBar::tab:selected {{ background: {colors['tab']}; color: {colors['button_text']}; }}
-            QGroupBox {{ font-weight: bold; border: 1px solid {colors['border']}; border-radius: 7px; margin-top: 10px; padding-top: 10px; background: {colors['panel']}; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; color: {colors['accent']}; }}
-            QLineEdit, QComboBox, QListWidget, QTextBrowser {{ border: 1px solid {colors['border']}; border-radius: 5px; padding: 5px; background: {colors['field']}; color: {colors['text']}; selection-background-color: {colors['selection']}; }}
-            QComboBox QAbstractItemView {{ background: {colors['field']}; color: {colors['text']}; selection-background-color: {colors['selection']}; }}
-            QLineEdit:focus, QComboBox:focus, QListWidget:focus, QTextBrowser:focus {{ border: 2px solid {colors['focus']}; }}
-            QPushButton {{ padding: 7px 13px; border: 1px solid {colors['border']}; border-radius: 5px; background: {colors['field']}; }}
-            QPushButton:hover {{ border-color: {colors['hover']}; background: {colors['hover']}; }}
-            QPushButton#startButton {{ color: {colors['button_text']}; background: {colors['positive']}; border: none; font-weight: bold; }}
-            QPushButton#startButton:disabled {{ background: {colors['disabled']}; }}
-            QPushButton#stopButton {{ color: {colors['button_text']}; background: {colors['danger']}; border: none; font-weight: bold; }}
-            QPushButton#stopButton:disabled {{ background: {colors['disabled']}; }}
-            QLabel#note {{ color: {colors['muted']}; padding: 6px; }}
-            QTextBrowser a {{ color: {colors['link']}; text-decoration: underline; }}
-        """)
+    def apply_theme(self) -> None:
+        self.setStyleSheet(NORD_STYLESHEET)
         self.log.document().setDefaultStyleSheet(
-            f"a {{ color: {colors['link']}; text-decoration: underline; }}"
+            "a { color: #88C0D0; text-decoration: none; }"
         )
 
     def process_started(self) -> None:
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
-        self.tabs.setEnabled(False)
+        self.navigation.setEnabled(False)
+        self.pages.setEnabled(False)
 
     def process_finished(self, exit_code: int, _exit_status: QProcess.ExitStatus) -> None:
         self.read_output()
@@ -619,21 +958,22 @@ class MainWindow(QMainWindow):
         self.append_log(f"\n[GUI] Процесс завершён, код: {exit_code}\n")
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
-        self.tabs.setEnabled(True)
+        self.navigation.setEnabled(True)
+        self.pages.setEnabled(True)
 
     def process_error(self, _error: QProcess.ProcessError) -> None:
         self.append_log(f"\n[GUI ERROR] {self.process.errorString()}\n")
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
-        if self.process.state() != QProcess.NotRunning:
+        if self.process.state() != QProcess.ProcessState.NotRunning:
             answer = QMessageBox.question(
                 self,
                 "Процесс выполняется",
                 "Остановить процесс и закрыть приложение?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
-            if answer != QMessageBox.Yes:
+            if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
             self.process.kill()
@@ -641,17 +981,18 @@ class MainWindow(QMainWindow):
 
         self.transcription_tab.save_settings(self.settings)
         self.chat_export_tab.save_settings(self.settings)
-        self.settings.setValue("window/tab", self.tabs.currentIndex())
-        self.settings.setValue("window/dark_theme", self.dark_theme.isChecked())
+        self.settings.setValue("window/page", self.pages.currentIndex())
         event.accept()
 
 
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("Transcriber")
+    app.setOrganizationName("LocalTools")
+    app.setStyle("Fusion")
     window = MainWindow()
     window.show()
-    raise SystemExit(app.exec_())
+    raise SystemExit(app.exec())
 
 
 if __name__ == "__main__":

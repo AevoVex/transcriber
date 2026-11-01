@@ -1,6 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+
 shared_options = [("X utf8", None, "OPTION")]
+version_resource = "version_info.txt" if sys.platform == "win32" else None
 common = dict(
     pathex=["."],
     binaries=[],
@@ -36,7 +39,7 @@ gui_exe = EXE(
     strip=False,
     upx=True,
     console=False,
-    version="version_info.txt",
+    version=version_resource,
 )
 
 cli_exe = EXE(
@@ -51,7 +54,7 @@ cli_exe = EXE(
     strip=False,
     upx=True,
     console=True,
-    version="version_info.txt",
+    version=version_resource,
 )
 
 chat_exe = EXE(
@@ -66,7 +69,7 @@ chat_exe = EXE(
     strip=False,
     upx=True,
     console=True,
-    version="version_info.txt",
+    version=version_resource,
 )
 
 image_exe = EXE(
@@ -81,7 +84,7 @@ image_exe = EXE(
     strip=False,
     upx=True,
     console=True,
-    version="version_info.txt",
+    version=version_resource,
 )
 bundle = COLLECT(
     gui_exe,
